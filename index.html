@@ -12,6 +12,8 @@
 .grid>div{min-width:0}.grid input[type="date"]{min-width:0;width:100%;display:block;-webkit-appearance:none}
 @media(max-width:600px){.history-date-grid{grid-template-columns:minmax(0,1fr);gap:0}.history-date-grid>div{min-width:0}}
 @supports(padding-bottom:env(safe-area-inset-bottom)){nav{padding-bottom:calc(22px + env(safe-area-inset-bottom))}}
+/* V16.4：結束日期與匯出按鈕間保留觸控間距 */
+.history-date-grid + .row{margin-top:20px}
 </style></head><body><main><header><small>PERSONAL MEDICATION JOURNAL</small><h1>藥物使用紀錄</h1><label for="person">目前查看</label><select id="person"><option value="自己">自己</option></select><div class="row" style="margin-top:8px"><button class="secondary" onclick="addFamily()">＋ 新增家人</button><button class="secondary" onclick="renameFamily()">修改家人名稱</button></div><select id="unused" class="hidden"></select></header><section id="content"></section><section class="card"><h2>資料備份</h2><p class="muted">下載 JSON 備份檔，保存自己與家人的藥物、補給及服藥紀錄。檔案含個人健康資料，請妥善保管。</p><div class="row"><button class="secondary" onclick="exportData()">下載備份</button><button class="secondary" onclick="removeLegacySnapshot()">清理舊版升級快照</button><button class="secondary" onclick="document.getElementById('restoreFile').click()">還原備份</button></div><input class="hidden" type="file" id="restoreFile" accept=".json,application/json" onchange="importData(event)"></section></main><nav><button data-tab="today" class="active">今日用藥</button><button data-tab="meds">我的藥物</button><button data-tab="stock">庫存管理</button><button data-tab="history">歷史紀錄</button><button data-tab="reminders">用藥提醒</button></nav><script>
 const KEY='medication-journal-v1';
 const PRE_V16_BACKUP_KEY='medication-journal-v1-pre-v16-backup';
@@ -169,11 +171,33 @@ function shareAllergies(){
  });
  const text=lines.join('\n');if(navigator.share){navigator.share({title:'藥物過敏史紀錄',text}).catch(e=>{if(e.name!=='AbortError')window.open('https://line.me/R/msg/text/?'+encodeURIComponent(text),'_blank','noopener,noreferrer')});return}window.open('https://line.me/R/msg/text/?'+encodeURIComponent(text),'_blank','noopener,noreferrer');
 }
-function exportAllergiesPDF(){
- const list=db.allergies.filter(a=>a.person===person());if(!list.length)return alert('目前沒有過敏史紀錄可匯出。');
- const rows=list.map((a,i)=>`<article><h3>${i+1}. ${safe(a.name||'未填藥名')}</h3><p><b>過敏者：</b>${safe(allergyPersonName(a))}</p><p><b>提供日期：</b>${safe(allergyProvidedDate(a))}</p><p><b>藥物成分：</b>${safe(a.ingredient||'未填寫')}</p><p><b>紀錄狀態：</b>${safe(a.status||'未註明')}</p><p><b>反應／備註：</b>${safe(a.note||'未填寫')}</p>${a.status==='疑似反應'&&a.reminderContent?`<p><b>提醒內容：</b>${safe(a.reminderContent)}</p>`:''}</article>`).join('');
- const w=window.open('','_blank');if(!w)return alert('瀏覽器阻擋了新視窗，請允許此網站開啟視窗後再試。');
- w.document.write(`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>藥物過敏史紀錄</title><style>body{font-family:Arial,"Noto Sans TC",sans-serif;color:#354238;padding:28px;line-height:1.7}h1{font-size:22px}article{border-bottom:1px solid #ddd;padding:8px 0;break-inside:avoid}.muted{color:#666;font-size:12px}@media print{button{display:none}}</style></head><body><h1>藥物過敏史紀錄</h1><p>匯出日期：${today()}</p><p class="muted">注意：本紀錄供就醫溝通參考；疑似反應不代表已確診，請由醫療專業人員評估。</p>${rows}<script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();
+// V16.4：直接產生 PDF 檔案，不再開啟新視窗或呼叫 window.print()。
+function allergyPdfLines(list){
+ const lines=['藥物過敏史紀錄','目前查看：'+person(),'提供日期：'+today(),'','提醒：本清單供就醫溝通參考；疑似反應不代表已確診。',''];
+ list.forEach((a,i)=>{
+  lines.push((i+1)+'. '+(a.name||'未填藥名'));
+  lines.push('過敏者：'+allergyPersonName(a));
+  lines.push('提供日期：'+allergyProvidedDate(a));
+  lines.push('藥物成分：'+(a.ingredient||'未填寫'));
+  lines.push('紀錄狀態：'+(a.status||'未註明'));
+  lines.push('反應／備註：'+(a.note||'未填寫'));
+  if(a.status==='疑似反應'&&a.reminderContent)lines.push('提醒內容：'+a.reminderContent);
+  lines.push('');
+ });
+ return lines;
+}
+async function exportAllergiesPDF(){
+ const list=db.allergies.filter(a=>a.person===person());
+ if(!list.length)return alert('目前沒有過敏史紀錄可匯出。');
+ try{
+  const pdf=await makeHistoryPdf(null,allergyPdfLines(list));
+  const filename='Medication_Allergy_'+today()+'.pdf';
+  const url=URL.createObjectURL(pdf);
+  const a=document.createElement('a');a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+  alert('已產生過敏史 PDF。請至「檔案」App 確認是否成功保存。');
+ }catch(e){console.error('過敏史 PDF 匯出失敗',e);alert('產生過敏史 PDF 失敗：'+e.message+'。原始資料未變更。')}
 }
 function addUnopened(){
  const medId=$('unopenedMed').value,med=db.meds.find(m=>m.id===medId&&m.person===person());
@@ -273,12 +297,12 @@ function wrapPdfLine(ctx,line,maxWidth){
  if(current)result.push(current);
  return result;
 }
-async function makeHistoryPdf(selection){
+async function makeHistoryPdf(selection,customLines){
  const W=1240,H=1754,margin=90,top=110,bottom=100,lineHeight=47;
  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
  const ctx=canvas.getContext('2d');if(!ctx)throw Error('此裝置無法使用 PDF 繪圖功能。');
  ctx.font='29px -apple-system, "Noto Sans TC", sans-serif';
- const lines=pdfTextLines(selection).flatMap(s=>wrapPdfLine(ctx,s,W-margin*2));
+ const lines=(customLines||pdfTextLines(selection)).flatMap(s=>wrapPdfLine(ctx,s,W-margin*2));
  const maxLines=Math.floor((H-top-bottom)/lineHeight),pages=[];
  for(let i=0;i<lines.length;i+=maxLines){
   ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
