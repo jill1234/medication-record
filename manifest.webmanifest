@@ -1,6 +1,6 @@
 {
-  "name": "藥物使用紀錄",
-  "short_name": "用藥紀錄",
+  "name": "藥物使用紀錄 V1.0.0",
+  "short_name": "藥物使用紀錄",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#faf8f2",
